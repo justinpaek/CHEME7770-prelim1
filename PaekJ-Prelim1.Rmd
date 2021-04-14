@@ -1,0 +1,81 @@
+---
+title: "PaekJ-Prelim1"
+author: "Justin Paek"
+date: "4/13/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Problem 2b
+
+```{r}
+data = read.table("Data-3-5-AMP.txt")
+AMP_concs = data[,1]   #AMP conc. in mM
+r_hats = data[,2]   #uM/hr
+measured_rates = data[,3]   #uM/hr
+```
+
+### Estimating $W_1$
+
+Set up parameters
+```{r}
+F6P_conc = 0.1   #mM
+ATP_conc = 2.3  #mM
+E1 = 0.12   #uM
+K_F6P = 0.11  #mM
+K_ATP = 0.42  #mM
+kcat = 0.4*3600  #1/h
+
+kinetic_limit = kcat*E1*(F6P_conc/(K_F6P+F6P_conc))*(ATP_conc/(K_ATP+ATP_conc))
+```
+To estimate $W_1$, we can consider the case where no AMP is present, so the only state that leads to activation is State 1. This means that $f_i = 0$, and $v(...)_j = \frac{W_1}{1+W_1}$. We can then solve for $W_1$:
+$$\hat{r_j} = r_j\left(\frac{W_1}{1+W_1}\right)$$
+$$W_1 = \frac{\hat{r_j}}{r_j - \hat{r_j}}$$
+```{r}
+r_hat_0 = r_hats[1]
+W1 = r_hat_0/(kinetic_limit - r_hat_0)
+W1
+```
+
+### Estimating $W_2$
+
+To get an estimate of $W_2$, we can look at where the system approaches equilibrium. Here, the fraction of bound AMP approaches saturation. That is, $f_i \approx 1$. As such, the overall rate becomes:
+$$\hat{r_j} = r_j\left(\frac{W_1+W_2}{1+W_1+W_2}\right)$$
+Solving for $W_2$ gives:
+$$W_2 = \frac{\frac{\hat{r_j}}{r_j}+W_1\left(\frac{\hat{r_j}}{r_j} -1\right)}{1 -\frac{\hat{r_j}}{r_j}}$$
+
+```{r}
+ratio = r_hats[6]/kinetic_limit
+W2 = (ratio + W1*(ratio-1))/(1-ratio)
+W2
+```
+
+### Estimating order parameter and binding constant
+
+To obtain values for the order parameter $n_i$ and the AMP binding constant $K_i$, we can fit the model to the experimental measured rate data and use non-linear least-squares regression. To do this, I used Microsoft Excel's solver function, which uses the GRG Nonlinear algorithm to find values of Ki and ni that minimized the sum of squared residuals. (file included in Github Repo)
+
+```{r}
+Ki = 12239.01119  #mM, determined from non-linear least-squares regression
+ni = 0.617855636  #dimensionless, determined from non-linear least-squares regression
+x = AMP_concs
+fi = ((x/Ki)^ni)/(1+((x/Ki)^ni))
+numerator = W1 + W2*fi
+denominator = 1 + W1 + W2*fi
+control = numerator/denominator
+model_y = kinetic_limit*control
+model_y
+measured_rates
+
+plot(AMP_concs, model_y, main = "Predicted and Measured Rates", ylab="Reaction Rate (uM/h)", xlab="[AMP] (mM)", col="blue")
+points(AMP_concs, measured_rates, col="red")
+legend("bottomright", legend=c("model prediction", "measured rate"), col=c("blue","red"), pch = ".", 
+  pt.cex = 5, 
+  cex = 1.2, 
+  text.col = "black", 
+  horiz = F )
+```
+
+The model is not a particularly good fit. Specifically, the shape of the model predictions is not sigmoidal. This may be attributed to the fact that the regression was done in Microsoft Excel, with limited capacity for fitting highly complex non-linear functions, especially with only 6 data points given. The model can likely be improved if the regression was performed directly in R or in Julia, but unfortunately I was not able to get the regression working properly in either. 
